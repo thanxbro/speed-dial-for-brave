@@ -56,7 +56,7 @@
         <input id="showTitles" type="checkbox"> <span data-i18n="showTitles"></span>
       </label>
       <fieldset class="section">
-        <legend data-i18n="backgrounds"></legend>
+        <legend><span data-i18n="backgrounds"></span> <span id="bgCount" class="count"></span></legend>
         <div id="bgList" class="bg-list"></div>
         <p id="bgEmpty" class="hint" data-i18n="bgEmpty"></p>
         <div class="row">
@@ -64,7 +64,7 @@
           <button type="button" class="btn" id="bgClear" data-i18n="removeAllBackgrounds"></button>
           <input id="bgFile" type="file" accept="image/*" multiple hidden>
         </div>
-        <p id="bgBusy" class="hint" hidden data-i18n="bgProcessing"></p>
+        <p id="bgBusy" class="hint" hidden></p>
 
         <div id="bgRotation">
           <label class="inline"><span data-i18n="bgChange"></span>
@@ -104,6 +104,7 @@
   </dialog>
 
   <script src="defaults.js"></script>
+  <script src="bgstore.js"></script>
   <script src="newtab.js"></script>
 </body>
 </html>

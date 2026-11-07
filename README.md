@@ -14,7 +14,8 @@ A speed dial for the new tab page: your favorite sites as tiles with page snapsh
 - Settings (⚙): number of columns (3–10), tile size (120–280 px), show or hide titles, background images, backup export and import (JSON).
 
 **Changing backgrounds**
-- Add one or more of your own images as backgrounds. Large images are scaled down to your screen size and compressed when added, so they don't bloat storage.
+- Add your own images as backgrounds, from one to hundreds. Large images are scaled down to your screen size and compressed when added (about 150–500 KB each).
+- Even with hundreds of images the new tab opens quickly: it loads only the image it shows. The list in the settings has its own scroll and an image counter, and thumbnails load as you scroll.
 - With two or more images, the background changes automatically: **on every new tab** or **after a set time**, where you enter the interval in minutes (1 to 10,080, i.e. up to a week).
 - Order: in sequence or random. The new image fades in smoothly.
 - Click a thumbnail in the settings to show that image right away; ✕ removes it.
@@ -42,7 +43,7 @@ To update, replace the files and click ↻ on the extension card in `brave://ext
 
 ## Privacy and permissions
 
-All tiles, snapshots and settings are stored locally in the browser (`chrome.storage.local`). The extension does not send data anywhere and has no servers of its own.
+All tiles, snapshots and settings are stored locally in the browser (`chrome.storage.local`, background images in the extension's IndexedDB). The extension does not send data anywhere and has no servers of its own.
 
 | Permission | Why |
 |---|---|
@@ -53,7 +54,7 @@ All tiles, snapshots and settings are stored locally in the browser (`chrome.sto
 
 ## Backup
 
-Settings → **Export** saves tiles, settings and, if the checkbox is on, background images to a JSON file. With backgrounds the file is larger. **Import** restores everything from such a file and replaces the current tiles. If the file has no backgrounds, your current backgrounds stay. Backups from older versions with a single background image are still supported.
+Settings → **Export** saves tiles, settings and, if the checkbox is on, background images to a JSON file. With backgrounds the file is larger (about 60 MB for 300 images); if it would exceed 100 MB, you are asked first. **Import** restores everything from such a file and replaces the current tiles. If the file has no backgrounds, your current backgrounds stay. Backups from older versions with a single background image are still supported.
 
 ## Development
 
@@ -63,6 +64,7 @@ There is no build step: edit the files and click ↻ on the extension card.
 |---|---|
 | `manifest.json` | Extension manifest (MV3) |
 | `defaults.js` | Shared code: translations, default tiles, URL helpers |
+| `bgstore.js` | Background image storage (IndexedDB) and image processing |
 | `newtab.html` / `.css` / `.js` | New tab page |
 | `popup.html` / `.css` / `.js` | Toolbar popup |
 | `_locales/{en,ru}/messages.json` | Interface texts |
@@ -71,7 +73,7 @@ There is no build step: edit the files and click ↻ on the extension card.
 Syntax check:
 
 ```bash
-cat defaults.js newtab.js | node --check -
+cat defaults.js bgstore.js newtab.js | node --check -
 cat defaults.js popup.js | node --check -
 ```
 

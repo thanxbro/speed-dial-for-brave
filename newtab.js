@@ -1,6 +1,7 @@
 'use strict';
 
 // DEFAULT_TILES, loadTiles, normalizeUrl, urlKey, msg и localizePage — в defaults.js
+// bgdb*, bgStoreImage, bgDataUrlToBlob, bgBlobToDataUrl и withBgLock — в bgstore.js
 
 const DEFAULT_SETTINGS = {
   columns: 5,
@@ -13,10 +14,11 @@ const DEFAULT_SETTINGS = {
 };
 const BG_INTERVAL_MIN = 1;
 const BG_INTERVAL_MAX = 10080; // неделя
+const EXPORT_WARN_MB = 100;    // предупреждать о большой резервной копии
 
 let tiles = [];
 let settings = { ...DEFAULT_SETTINGS };
-let backgrounds = [];                    // data URL картинок фона
+let bgIds = [];                           // порядок фоновых картинок (id записей в IndexedDB)
 let bgState = { index: 0, changedAt: 0 }; // какой фон показан и когда он сменился
 let editingIndex = null; // null — новая плитка, число — редактирование
 let dragIndex = null;
@@ -56,21 +58,17 @@ function legacyBg(rawSettings) {
   return isImageDataUrl(bg) ? bg : '';
 }
 
+function cleanIds(value) {
+  return Array.isArray(value) ? value.filter((id) => typeof id === 'string') : [];
+}
+
 // ---------- Хранилище ----------
 async function load() {
-  const data = await chrome.storage.local.get(['settings', 'backgrounds', 'bgState']);
+  const data = await chrome.storage.local.get(['settings', 'bgIds', 'bgState']);
   tiles = await loadTiles();
   settings = sanitizeSettings(data.settings);
   bgState = { ...bgState, ...(data.bgState || {}) };
-
-  if (Array.isArray(data.backgrounds)) {
-    backgrounds = data.backgrounds.filter(isImageDataUrl);
-  } else {
-    // переход со старой версии: единственный фон становится первым в списке
-    const old = legacyBg(data.settings);
-    backgrounds = old ? [old] : [];
-    await chrome.storage.local.set({ backgrounds, settings });
-  }
+  bgIds = cleanIds(data.bgIds);
   normalizeBgState();
 }
 
@@ -78,9 +76,60 @@ function save() {
   return chrome.storage.local.set({ tiles, settings });
 }
 
-// состояние фона (и, при необходимости, список фонов) всегда пишется с меткой вкладки
+// состояние фона (и, при необходимости, другие ключи) всегда пишется с меткой вкладки
 function saveBg(extra = {}) {
   return chrome.storage.local.set({ ...extra, bgState: { ...bgState, by: TAB_ID } });
+}
+
+async function readBgIds() {
+  const { bgIds: ids } = await chrome.storage.local.get('bgIds');
+  return cleanIds(ids);
+}
+
+// Перенос фонов из старых версий в IndexedDB:
+// 1.3.0 хранила список data URL в ключе backgrounds, версии до 1.3.0 — один фон в settings.bg.
+// Отметка bgMigrated пишется одной записью с новым списком: если вкладку закроют
+// до удаления старого ключа, перенос не повторится и дублей не будет.
+async function migrateBackgrounds() {
+  const quick = await chrome.storage.local.get(['backgrounds', 'settings', 'bgMigrated']);
+  const hasOld = Array.isArray(quick.backgrounds) || legacyBg(quick.settings);
+  if (!hasOld) return;
+  if (quick.bgMigrated) {
+    await chrome.storage.local.remove('backgrounds'); // остаток прерванного переноса
+    return;
+  }
+
+  await withBgLock(async () => {
+    // перечитываем под блокировкой: другая вкладка могла уже всё перенести
+    const d = await chrome.storage.local.get(['backgrounds', 'settings', 'bgIds', 'bgState', 'bgMigrated']);
+    if (d.bgMigrated) return;
+    // номер текущей картинки берём из хранилища: при загрузке список был пуст и номер обнулился
+    bgState = { ...bgState, ...(d.bgState || {}) };
+    const urls = Array.isArray(d.backgrounds)
+      ? d.backgrounds.filter(isImageDataUrl)
+      : (legacyBg(d.settings) ? [legacyBg(d.settings)] : []);
+
+    const ids = cleanIds(d.bgIds);
+    for (const url of urls) {
+      try { ids.push(await bgStoreImage(await bgDataUrlToBlob(url))); }
+      catch { /* битую картинку пропускаем */ }
+    }
+    bgIds = ids;
+    normalizeBgState();
+    await chrome.storage.local.set({ bgIds, bgMigrated: true, settings: sanitizeSettings(d.settings) });
+    await chrome.storage.local.remove('backgrounds');
+  });
+}
+
+// удаляет из базы картинки, которых нет в списке (остатки прерванных операций)
+function cleanupOrphanBackgrounds() {
+  if (!navigator.locks) return;
+  navigator.locks.request('speed-dial-bg', { ifAvailable: true }, async (lock) => {
+    if (!lock) return; // список сейчас меняет другая вкладка — уберём в другой раз
+    const ids = new Set(await readBgIds());
+    const extra = (await bgdbKeys()).filter((k) => !ids.has(k));
+    if (extra.length) await bgdbDelete(extra);
+  }).catch(() => {});
 }
 
 // ---------- Вспомогательные функции ----------
@@ -198,51 +247,82 @@ function actionButton(text, label, onClick) {
 
 // ---------- Фон ----------
 const bgLayers = [$('bgA'), $('bgB')];
+const bgLayerUrls = ['', ''];  // object URL картинки на каждом слое
 let bgFront = 0;   // слой, который сейчас виден
-let bgShown = '';  // картинка, которая сейчас показана
+let bgShown = '';  // id картинки, которая сейчас показана
 let bgToken = 0;   // защита от гонок при быстрой смене
 let bgTimer = null;
 
 function normalizeBgState() {
-  const n = backgrounds.length;
+  const n = bgIds.length;
   const i = Math.round(Number(bgState.index)) || 0;
   bgState.index = n ? ((i % n) + n) % n : 0;
   bgState.changedAt = Number(bgState.changedAt) || 0;
 }
 
-function currentBg() {
-  return backgrounds.length ? backgrounds[bgState.index] : '';
+function currentBgId() {
+  return bgIds.length ? bgIds[bgState.index] : '';
+}
+
+// ждём загрузки картинки, чтобы переход не начался с пустого слоя.
+// img.decode() в некоторых состояниях страницы не завершается вовсе,
+// поэтому ждём его недолго, а всё ожидание ограничено по времени.
+function waitForImage(url) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const done = () => resolve();
+    img.onload = () => {
+      img.decode().then(done, done);
+      setTimeout(done, 300);
+    };
+    img.onerror = done;
+    setTimeout(done, 3000);
+    img.src = url;
+  });
 }
 
 // новый фон проявляется поверх старого, затем старый слой прячется
-async function showBackground(url, animate) {
-  if (url === bgShown) return;
-  bgShown = url;
+async function showBackground(id, animate) {
+  if (id === bgShown) return;
+  bgShown = id;
   const token = ++bgToken;
   const front = bgLayers[bgFront];
 
-  if (!url) {
+  if (!id) {
     front.classList.toggle('instant', !animate);
     front.classList.remove('shown');
     return;
   }
 
-  // ждём, пока картинка декодируется, чтобы переход не начался с пустого слоя
-  const img = new Image();
-  img.src = url;
-  try { await img.decode(); } catch { /* покажем как есть */ }
-  if (token !== bgToken) return;
+  let url = '';
+  try {
+    const rec = await bgdbGet(id);
+    if (rec) url = URL.createObjectURL(rec.full);
+  } catch { /* базы нет или запись недоступна */ }
+  if (!url) {
+    if (token === bgToken) bgShown = '';
+    return;
+  }
 
-  const back = bgLayers[1 - bgFront];
+  await waitForImage(url);
+  if (token !== bgToken) {
+    URL.revokeObjectURL(url);
+    return;
+  }
+
+  const backIndex = 1 - bgFront;
+  const back = bgLayers[backIndex];
   back.style.zIndex = '-1';
   front.style.zIndex = '-2';
   back.classList.add('instant');
   back.classList.remove('shown');
   back.style.backgroundImage = `url("${url}")`;
+  if (bgLayerUrls[backIndex]) URL.revokeObjectURL(bgLayerUrls[backIndex]);
+  bgLayerUrls[backIndex] = url;
   void back.offsetWidth; // применяем прозрачность до начала перехода
   back.classList.toggle('instant', !animate);
   back.classList.add('shown');
-  bgFront = 1 - bgFront;
+  bgFront = backIndex;
 
   setTimeout(() => {
     if (token !== bgToken) return;
@@ -252,7 +332,7 @@ async function showBackground(url, animate) {
 }
 
 function nextBgIndex() {
-  const n = backgrounds.length;
+  const n = bgIds.length;
   if (n < 2) return 0;
   if (settings.bgOrder === 'random') {
     let i;
@@ -274,26 +354,28 @@ async function advanceBackground() {
 
 function scheduleBackground() {
   clearTimeout(bgTimer);
-  if (settings.bgMode !== 'interval' || backgrounds.length < 2) return;
+  if (settings.bgMode !== 'interval' || bgIds.length < 2) return;
   const wait = bgState.changedAt + settings.bgInterval * 60000 - Date.now();
   bgTimer = setTimeout(checkBackground, Math.max(1000, wait + 50));
 }
 
 async function checkBackground() {
-  if (settings.bgMode === 'interval' && backgrounds.length >= 2) {
+  if (settings.bgMode === 'interval' && bgIds.length >= 2) {
     // фон могла уже сменить другая вкладка — берём свежее состояние
-    const { bgState: fresh } = await chrome.storage.local.get('bgState');
-    if (fresh) { bgState = { ...bgState, ...fresh }; normalizeBgState(); }
-    if (isBgDue()) await advanceBackground();
-    showBackground(currentBg(), true);
-    renderBgList();
+    const { bgState: fresh, bgIds: freshIds } = await chrome.storage.local.get(['bgState', 'bgIds']);
+    if (fresh) bgState = { ...bgState, ...fresh };
+    bgIds = cleanIds(freshIds);
+    normalizeBgState();
+    if (bgIds.length >= 2 && isBgDue()) await advanceBackground();
+    showBackground(currentBgId(), true);
+    markCurrentBg();
   }
   scheduleBackground();
 }
 
 // при открытии вкладки
 async function initBackground() {
-  if (backgrounds.length >= 2) {
+  if (bgIds.length >= 2) {
     if (settings.bgMode === 'tab') {
       await advanceBackground();
     } else if (!bgState.changedAt) {
@@ -303,15 +385,16 @@ async function initBackground() {
       await advanceBackground();
     }
   }
-  showBackground(currentBg(), false);
+  showBackground(currentBgId(), false);
   scheduleBackground();
 }
 
 // после изменения списка фонов
 function onBackgroundsChanged() {
   normalizeBgState();
+  dropStaleThumbs();
   renderBgList();
-  showBackground(currentBg(), true);
+  showBackground(currentBgId(), true);
   scheduleBackground();
 }
 
@@ -323,28 +406,6 @@ document.addEventListener('visibilitychange', async () => {
   applySettings();
   checkBackground();
 });
-
-// уменьшаем картинку до размера экрана и сжимаем в JPEG, чтобы не раздувать хранилище
-async function shrinkImage(file) {
-  const bmp = await createImageBitmap(file);
-  const dpr = window.devicePixelRatio || 1;
-  const maxW = Math.min(3840, Math.round(screen.width * dpr));
-  const maxH = Math.min(2160, Math.round(screen.height * dpr));
-  // картинка растягивается на весь экран (cover), поэтому ей хватит покрыть экран по обеим сторонам
-  const scale = Math.min(1, Math.max(maxW / bmp.width, maxH / bmp.height));
-  const w = Math.max(1, Math.round(bmp.width * scale));
-  const h = Math.max(1, Math.round(bmp.height * scale));
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#000'; // прозрачные места PNG станут чёрными, а не белыми
-  ctx.fillRect(0, 0, w, h);
-  ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(bmp, 0, 0, w, h);
-  bmp.close();
-  return canvas.toDataURL('image/jpeg', 0.85);
-}
 
 // ---------- Перетаскивание ----------
 function addDragHandlers(el) {
@@ -440,15 +501,51 @@ function syncSettingsForm() {
   renderBgList();
 }
 
+// ---------- Список фонов в настройках ----------
+// миниатюры загружаются из базы только когда попадают в видимую часть списка
+const bgList = $('bgList');
+const thumbUrls = new Map(); // id → Promise<object URL миниатюры>
+
+const thumbObserver = new IntersectionObserver((entries) => {
+  for (const entry of entries) {
+    if (!entry.isIntersecting) continue;
+    thumbObserver.unobserve(entry.target);
+    loadThumb(entry.target);
+  }
+}, { root: bgList, rootMargin: '120px 0px' });
+
+async function loadThumb(el) {
+  const id = el.dataset.id;
+  if (!thumbUrls.has(id)) {
+    thumbUrls.set(id, bgdbGet(id)
+      .then((rec) => (rec ? URL.createObjectURL(rec.thumb) : ''))
+      .catch(() => ''));
+  }
+  const url = await thumbUrls.get(id);
+  if (url) el.style.backgroundImage = `url("${url}")`;
+}
+
+// освобождаем миниатюры удалённых картинок
+function dropStaleThumbs() {
+  const ids = new Set(bgIds);
+  for (const [id, promise] of thumbUrls) {
+    if (ids.has(id)) continue;
+    thumbUrls.delete(id);
+    promise.then((url) => url && URL.revokeObjectURL(url));
+  }
+}
+
 function renderBgList() {
-  const list = $('bgList');
-  list.textContent = '';
-  backgrounds.forEach((url, i) => {
+  thumbObserver.disconnect();
+  bgList.textContent = '';
+  const current = currentBgId();
+
+  for (const id of bgIds) {
     const item = document.createElement('div');
-    item.className = 'bg-item' + (i === bgState.index ? ' current' : '');
-    item.style.backgroundImage = `url("${url}")`;
+    item.className = 'bg-item' + (id === current ? ' current' : '');
+    item.dataset.id = id;
     item.title = msg('bgShowNow');
-    item.addEventListener('click', () => setCurrentBackground(i));
+    item.addEventListener('click', () => setCurrentBackground(id));
 
     const del = document.createElement('button');
     del.type = 'button';
@@ -456,41 +553,95 @@ function renderBgList() {
     del.title = msg('delete');
     del.addEventListener('click', (e) => {
       e.stopPropagation();
-      removeBackground(i);
+      removeBackground(id);
     });
 
     item.append(del);
-    list.append(item);
-  });
+    bgList.append(item);
+    thumbObserver.observe(item);
+  }
 
-  const n = backgrounds.length;
+  const n = bgIds.length;
+  $('bgCount').textContent = n ? `(${n})` : '';
   $('bgEmpty').hidden = n > 0;
   $('bgClear').hidden = n === 0;
   $('bgRotation').hidden = n < 2;
   $('bgOneNote').hidden = n !== 1;
 }
 
-async function setCurrentBackground(i) {
+function markCurrentBg() {
+  const current = currentBgId();
+  for (const el of bgList.children) el.classList.toggle('current', el.dataset.id === current);
+}
+
+async function setCurrentBackground(id) {
+  const i = bgIds.indexOf(id);
+  if (i === -1) return;
   bgState = { index: i, changedAt: Date.now() };
-  onBackgroundsChanged();
+  markCurrentBg();
+  showBackground(id, true);
+  scheduleBackground();
   await saveBg();
 }
 
-async function removeBackground(i) {
-  const cur = bgState.index;
-  backgrounds.splice(i, 1);
-  if (i < cur) {
-    bgState.index = cur - 1;
-  } else if (i === cur) {
-    bgState.changedAt = Date.now(); // показанный фон удалён — следующий начинает свой интервал
-  }
+async function removeBackground(id) {
+  await withBgLock(async () => {
+    const ids = await readBgIds();
+    const i = ids.indexOf(id);
+    if (i === -1) return;
+    const currentId = currentBgId();
+    ids.splice(i, 1);
+    bgIds = ids;
+    const ci = bgIds.indexOf(currentId);
+    if (ci !== -1) {
+      bgState.index = ci;
+    } else {
+      bgState.index = i; // показанный фон удалён — следующий начинает свой интервал
+      bgState.changedAt = Date.now();
+    }
+    normalizeBgState();
+    await saveBg({ bgIds });
+    await bgdbDelete([id]);
+  });
   onBackgroundsChanged();
-  await saveBg({ backgrounds });
+}
+
+function setBusy(text) {
+  $('bgBusy').hidden = !text;
+  $('bgBusy').textContent = text || '';
+  $('bgAdd').disabled = !!text;
+  $('bgClear').disabled = !!text;
+  $('importBtn').disabled = !!text;
+}
+
+// добавляет картинки по одной: каждая сразу сохраняется и появляется в списке
+async function addBackgrounds(blobs) {
+  let failed = 0;
+  await withBgLock(async () => {
+    for (let k = 0; k < blobs.length; k++) {
+      setBusy(msg('bgProcessingProgress', k + 1, blobs.length));
+      let id;
+      try { id = await bgStoreImage(blobs[k]); }
+      catch { failed++; continue; }
+
+      const ids = await readBgIds();
+      if (!ids.length) bgState.index = 0;
+      // пока картинок меньше двух, фон не меняется — интервал начинает отсчёт сейчас
+      if (ids.length < 2) bgState.changedAt = Date.now();
+      ids.push(id);
+      bgIds = ids;
+      normalizeBgState();
+      await saveBg({ bgIds });
+      onBackgroundsChanged();
+    }
+  });
+  setBusy('');
+  return failed;
 }
 
 $('settingsBtn').addEventListener('click', () => {
-  syncSettingsForm();
   settingsDialog.showModal();
+  syncSettingsForm();
 });
 
 $('cols').addEventListener('input', (e) => {
@@ -512,35 +663,19 @@ $('bgFile').addEventListener('change', async (e) => {
   const files = [...e.target.files];
   e.target.value = '';
   if (!files.length) return;
-
-  $('bgBusy').hidden = false;
-  $('bgAdd').disabled = true;
-  const added = [];
-  let failed = 0;
-  for (const file of files) {
-    try { added.push(await shrinkImage(file)); }
-    catch { failed++; }
-  }
-  $('bgBusy').hidden = true;
-  $('bgAdd').disabled = false;
-
-  if (added.length) {
-    if (!backgrounds.length) bgState.index = 0;
-    // пока картинок меньше двух, фон не меняется — интервал начинает отсчёт сейчас
-    if (backgrounds.length < 2) bgState.changedAt = Date.now();
-    backgrounds = [...backgrounds, ...added];
-    onBackgroundsChanged();
-    await saveBg({ backgrounds });
-  }
+  const failed = await addBackgrounds(files);
   if (failed) alert(msg('bgLoadFailed', failed));
 });
 
 $('bgClear').addEventListener('click', async () => {
   if (!confirm(msg('confirmRemoveAllBackgrounds'))) return;
-  backgrounds = [];
-  bgState = { index: 0, changedAt: 0 };
+  await withBgLock(async () => {
+    bgIds = [];
+    bgState = { index: 0, changedAt: 0 };
+    await saveBg({ bgIds });
+    await bgdbClear();
+  });
   onBackgroundsChanged();
-  await saveBg({ backgrounds });
 });
 
 $('bgMode').addEventListener('change', (e) => {
@@ -582,22 +717,44 @@ $('bgOrder').addEventListener('change', (e) => {
   save();
 });
 
-// экспорт / импорт (резервная копия плиток, настроек и фонов)
+// ---------- Экспорт / импорт (плитки, настройки и фоны) ----------
 $('exportBgs').addEventListener('change', (e) => {
   settings.exportBackgrounds = e.target.checked;
   save();
 });
 
-$('exportBtn').addEventListener('click', () => {
-  const data = { tiles, settings };
-  if (settings.exportBackgrounds) data.backgrounds = backgrounds;
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+// файл собирается из частей, а не одной строкой: с сотнями фонов строка была бы слишком длинной
+$('exportBtn').addEventListener('click', async () => {
+  const parts = ['{"tiles":', JSON.stringify(tiles), ',"settings":', JSON.stringify(settings)];
+
+  if (settings.exportBackgrounds && bgIds.length) {
+    const blobs = [];
+    for (const id of bgIds) {
+      const rec = await bgdbGet(id).catch(() => null);
+      if (rec) blobs.push(rec.full);
+    }
+    // в JSON картинки записываются как base64 — это на треть больше их размера
+    const mb = Math.round(blobs.reduce((sum, b) => sum + b.size, 0) * 4 / 3 / 1048576);
+    if (mb >= EXPORT_WARN_MB && !confirm(msg('exportLarge', mb))) return;
+
+    setBusy(msg('exportPreparing'));
+    parts.push(',"backgrounds":[');
+    for (let k = 0; k < blobs.length; k++) {
+      parts.push((k ? ',' : '') + JSON.stringify(await bgBlobToDataUrl(blobs[k])));
+    }
+    parts.push(']');
+    setBusy('');
+  }
+  parts.push('}');
+
+  const blob = new Blob(parts, { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = 'speed-dial-backup.json';
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 });
+
 $('importBtn').addEventListener('click', () => $('importFile').click());
 $('importFile').addEventListener('change', async (e) => {
   const file = e.target.files[0];
@@ -609,21 +766,33 @@ $('importFile').addEventListener('change', async (e) => {
     tiles = data.tiles.filter(t => t && typeof t.url === 'string');
     settings = sanitizeSettings(data.settings);
 
-    // фоны: новый формат — список, старый — один фон в settings.bg;
+    // фоны: список data URL (1.3.0 и новее) или один фон в settings.bg (до 1.3.0);
     // если фонов в файле нет, текущие остаются
-    let imported = null;
-    if (Array.isArray(data.backgrounds)) imported = data.backgrounds.filter(isImageDataUrl);
-    else if (legacyBg(data.settings)) imported = [legacyBg(data.settings)];
+    let urls = null;
+    if (Array.isArray(data.backgrounds)) urls = data.backgrounds.filter(isImageDataUrl);
+    else if (legacyBg(data.settings)) urls = [legacyBg(data.settings)];
 
-    if (imported) {
-      backgrounds = imported;
-      bgState = { index: 0, changedAt: Date.now() };
-      await saveBg({ tiles, settings, backgrounds });
+    if (urls) {
+      await withBgLock(async () => {
+        const oldIds = await readBgIds();
+        const ids = [];
+        for (let k = 0; k < urls.length; k++) {
+          setBusy(msg('bgProcessingProgress', k + 1, urls.length));
+          try { ids.push(await bgStoreImage(await bgDataUrlToBlob(urls[k]))); }
+          catch { /* битую картинку пропускаем */ }
+        }
+        bgIds = ids;
+        bgState = { index: 0, changedAt: Date.now() };
+        await saveBg({ tiles, settings, bgIds });
+        await bgdbDelete(oldIds);
+      });
+      setBusy('');
     } else {
       await save();
     }
     applySettings(); syncSettingsForm(); render(); onBackgroundsChanged();
   } catch (err) {
+    setBusy('');
     alert(msg('importFailed', err.message));
   }
 });
@@ -650,12 +819,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
   // свои записи фона уже применены, их пропускаем
   const ownBgWrite = changes.bgState?.newValue?.by === TAB_ID;
-  if ((changes.backgrounds || changes.bgState) && !ownBgWrite) {
-    if (changes.backgrounds) {
-      backgrounds = (changes.backgrounds.newValue || []).filter(isImageDataUrl);
-    }
+  if ((changes.bgIds || changes.bgState) && !ownBgWrite) {
+    if (changes.bgIds) bgIds = cleanIds(changes.bgIds.newValue);
     // в режиме «при каждой новой вкладке» открытые вкладки свой фон не меняют
-    if (changes.bgState && (settings.bgMode === 'interval' || changes.backgrounds)) {
+    if (changes.bgState && (settings.bgMode === 'interval' || changes.bgIds)) {
       bgState = { ...bgState, ...(changes.bgState.newValue || {}) };
     }
     onBackgroundsChanged();
@@ -673,5 +840,7 @@ localizePage();
   await load();
   applySettings();
   render();
+  await migrateBackgrounds();
   await initBackground();
+  cleanupOrphanBackgrounds();
 })();
