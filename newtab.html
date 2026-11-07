@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title data-i18n="newTabTitle">New Tab</title>
+  <link rel="stylesheet" href="newtab.css">
+</head>
+<body>
+  <button id="settingsBtn" class="settings-btn" data-i18n-title="settings">⚙</button>
+
+  <main>
+    <form id="searchForm" class="search">
+      <input id="searchInput" type="search" data-i18n-placeholder="searchPlaceholder" autocomplete="off" autofocus>
+    </form>
+    <div id="grid" class="grid"></div>
+  </main>
+
+  <!-- Добавление / редактирование плитки -->
+  <dialog id="tileDialog">
+    <form method="dialog" id="tileForm">
+      <h2 id="tileDialogTitle"></h2>
+      <label><span data-i18n="fieldUrl"></span>
+        <input name="url" type="text" required placeholder="example.com">
+      </label>
+      <label><span data-i18n="fieldTitle"></span>
+        <input name="title" type="text" data-i18n-placeholder="optional">
+      </label>
+      <label><span data-i18n="fieldImage"></span>
+        <input name="image" type="text" data-i18n-placeholder="imagePlaceholder">
+      </label>
+      <label class="check" id="removeShotRow" hidden>
+        <input name="removeShot" type="checkbox"> <span data-i18n="removeShot"></span>
+      </label>
+      <menu>
+        <button class="btn" value="cancel" formnovalidate data-i18n="cancel"></button>
+        <button class="btn primary" value="ok" data-i18n="save"></button>
+      </menu>
+    </form>
+  </dialog>
+
+  <!-- Настройки -->
+  <dialog id="settingsDialog">
+    <form method="dialog">
+      <h2 data-i18n="settings"></h2>
+      <label><span data-i18n="columns"></span> <output id="colsOut"></output>
+        <input id="cols" type="range" min="3" max="10" step="1">
+      </label>
+      <label><span data-i18n="tileSize"></span> <output id="sizeOut"></output>
+        <input id="size" type="range" min="120" max="280" step="10">
+      </label>
+      <label class="check">
+        <input id="showTitles" type="checkbox"> <span data-i18n="showTitles"></span>
+      </label>
+      <label><span data-i18n="background"></span>
+        <input id="bgFile" type="file" accept="image/*">
+      </label>
+      <div class="row">
+        <button type="button" class="btn" id="bgReset" data-i18n="removeBackground"></button>
+        <button type="button" class="btn" id="exportBtn" data-i18n="export"></button>
+        <button type="button" class="btn" id="importBtn" data-i18n="import"></button>
+        <input id="importFile" type="file" accept="application/json" hidden>
+      </div>
+      <menu>
+        <button class="btn primary" value="close" data-i18n="done"></button>
+      </menu>
+    </form>
+  </dialog>
+
+  <script src="defaults.js"></script>
+  <script src="newtab.js"></script>
+</body>
+</html>

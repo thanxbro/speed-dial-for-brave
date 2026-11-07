@@ -1,0 +1,52 @@
+{
+  "extName":          { "message": "Speed Dial for Brave" },
+  "extDescription":   { "message": "Экспресс-панель с плитками сайтов и снимками страниц на новой вкладке." },
+  "actionTitle":      { "message": "Добавить сайт на экспресс-панель" },
+  "htmlLang":         { "message": "ru", "description": "Код языка для атрибута lang у <html>" },
+
+  "newTabTitle":      { "message": "Новая вкладка" },
+  "searchPlaceholder":{ "message": "Поиск в интернете" },
+  "settings":         { "message": "Настройки" },
+  "addSite":          { "message": "Добавить сайт" },
+  "edit":             { "message": "Изменить" },
+  "delete":           { "message": "Удалить" },
+  "confirmDelete": {
+    "message": "Удалить плитку «$NAME$»?",
+    "placeholders": { "name": { "content": "$1", "example": "YouTube" } }
+  },
+  "wikipedia":        { "message": "Википедия" },
+
+  "tileDialogNew":    { "message": "Новая плитка" },
+  "tileDialogEdit":   { "message": "Изменить плитку" },
+  "fieldUrl":         { "message": "Адрес сайта" },
+  "fieldTitle":       { "message": "Название" },
+  "optional":         { "message": "Необязательно" },
+  "fieldImage":       { "message": "Картинка для плитки (URL)" },
+  "imagePlaceholder": { "message": "Необязательно — по умолчанию снимок или значок сайта" },
+  "removeShot":       { "message": "Убрать снимок страницы" },
+  "cancel":           { "message": "Отмена" },
+  "save":             { "message": "Сохранить" },
+
+  "columns":          { "message": "Колонок:" },
+  "tileSize":         { "message": "Размер плиток:" },
+  "showTitles":       { "message": "Показывать названия" },
+  "background":       { "message": "Фоновое изображение" },
+  "removeBackground": { "message": "Убрать фон" },
+  "export":           { "message": "Экспорт" },
+  "import":           { "message": "Импорт" },
+  "done":             { "message": "Готово" },
+  "importFailed": {
+    "message": "Не удалось импортировать файл: $ERROR$",
+    "placeholders": { "error": { "content": "$1", "example": "нет списка плиток" } }
+  },
+  "importNoTiles":    { "message": "нет списка плиток" },
+
+  "addToDial":        { "message": "Добавить на панель" },
+  "updateTile":       { "message": "Обновить плитку" },
+  "pageNotAllowed":   { "message": "Эту страницу нельзя добавить на панель — подходят только обычные сайты (http/https)." },
+  "pageShot":         { "message": "Снимок страницы" },
+  "useShot":          { "message": "Снимок страницы как картинка плитки" },
+  "fieldAddress":     { "message": "Адрес" },
+  "alreadyExists":    { "message": "Этот сайт уже есть на панели — плитка будет обновлена." },
+  "added":            { "message": "Готово ✓" }
+}

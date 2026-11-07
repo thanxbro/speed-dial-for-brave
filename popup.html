@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <h1 data-i18n="addToDial">Add to Speed Dial</h1>
+
+  <p id="error" class="error" hidden data-i18n="pageNotAllowed"></p>
+
+  <form id="form" hidden>
+    <div id="shotBox" class="shot" hidden>
+      <img id="preview" alt="" data-i18n-alt="pageShot">
+    </div>
+    <label class="check" id="shotRow" hidden>
+      <input id="useShot" type="checkbox" checked> <span data-i18n="useShot"></span>
+    </label>
+
+    <label><span data-i18n="fieldTitle"></span>
+      <input id="title" type="text">
+    </label>
+    <label><span data-i18n="fieldAddress"></span>
+      <input id="url" type="text" required>
+    </label>
+
+    <p id="exists" class="note" hidden data-i18n="alreadyExists"></p>
+
+    <button id="addBtn" class="primary" type="submit" data-i18n="addToDial"></button>
+    <p id="done" class="done" hidden data-i18n="added"></p>
+  </form>
+
+  <script src="defaults.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

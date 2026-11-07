@@ -1,0 +1,30 @@
+# Claude Code: локальные настройки и служебные файлы
+.claude/
+
+# Упакованное расширение и ключ подписи (ключ .pem никогда не публиковать)
+*.crx
+*.pem
+*.zip
+
+# Резервные копии плиток из экспорта
+speed-dial-backup*.json
+
+# Windows
+Thumbs.db
+ehthumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+._*
+
+# Редакторы
+.vscode/
+.idea/
+*.swp
+*~
+
+# Node (если появятся инструменты разработки)
+node_modules/
+npm-debug.log*

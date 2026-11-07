@@ -1,0 +1,209 @@
+:root {
+  --cols: 5;
+  --tile: 180px;
+  --gap: 22px;
+  --accent: #4c6fff;
+}
+
+* { box-sizing: border-box; }
+
+html, body { margin: 0; min-height: 100%; }
+
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: #fff;
+  background-color: #151726;
+  background-image: linear-gradient(135deg, #2a2f5a 0%, #151726 60%, #0f1019 100%);
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+
+/* лёгкое затемнение поверх обоев, чтобы плитки читались */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .25);
+  pointer-events: none;
+}
+
+main {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 16px 60px;
+}
+
+/* ---------- Поиск ---------- */
+.search {
+  width: min(620px, 92vw);
+  margin: 11vh 0 44px;
+}
+.search input {
+  width: 100%;
+  padding: 14px 22px;
+  font: inherit;
+  font-size: 16px;
+  color: #fff;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, .25);
+  background: rgba(255, 255, 255, .14);
+  backdrop-filter: blur(12px);
+  outline: none;
+}
+.search input::placeholder { color: rgba(255, 255, 255, .65); }
+.search input:focus { border-color: rgba(255, 255, 255, .55); }
+
+/* ---------- Сетка плиток ---------- */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(var(--cols), minmax(0, var(--tile)));
+  gap: var(--gap);
+  width: min(100%, calc(var(--cols) * var(--tile) + (var(--cols) - 1) * var(--gap)));
+  justify-content: center;
+}
+
+.tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  color: inherit;
+  text-decoration: none;
+  transition: transform .15s ease;
+}
+.tile:hover { transform: translateY(-3px); }
+
+.thumb {
+  aspect-ratio: 16 / 10;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, .12);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, .35);
+}
+.thumb img.icon {
+  width: 32%;
+  max-width: 64px;
+  aspect-ratio: 1;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .35));
+}
+.thumb img.cover { width: 100%; height: 100%; object-fit: cover; }
+.thumb .letter {
+  font-size: calc(var(--tile) * .2);
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.title {
+  margin-top: 8px;
+  font-size: 13px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, .7);
+}
+body.no-titles .title { display: none; }
+
+/* кнопки на плитке */
+.actions {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity .15s;
+}
+.tile:hover .actions { opacity: 1; }
+.actions button {
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, .55);
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+}
+.actions button:hover { background: rgba(0, 0, 0, .85); }
+
+/* плитка «добавить» */
+.tile.add .thumb {
+  background: rgba(255, 255, 255, .07);
+  border: 2px dashed rgba(255, 255, 255, .3);
+  box-shadow: none;
+  font-size: 40px;
+  color: rgba(255, 255, 255, .7);
+}
+.tile.add:hover .thumb { background: rgba(255, 255, 255, .13); }
+
+/* перетаскивание */
+.tile.dragging { opacity: .35; }
+.tile.drop-target .thumb { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+/* ---------- Кнопка настроек ---------- */
+.settings-btn {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 2;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, .25);
+  background: rgba(255, 255, 255, .12);
+  backdrop-filter: blur(10px);
+  color: #fff;
+  font-size: 20px;
+  cursor: pointer;
+}
+.settings-btn:hover { background: rgba(255, 255, 255, .22); }
+
+/* ---------- Диалоги ---------- */
+dialog {
+  width: min(430px, 92vw);
+  padding: 24px;
+  border: 0;
+  border-radius: 14px;
+  background: #23263a;
+  color: #fff;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .5);
+}
+dialog::backdrop { background: rgba(0, 0, 0, .5); backdrop-filter: blur(3px); }
+dialog h2 { margin: 0 0 18px; font-size: 18px; }
+dialog label { display: block; margin-bottom: 14px; font-size: 13px; color: #b9bdd3; }
+dialog label.check { display: flex; align-items: center; gap: 8px; color: #fff; }
+dialog input[type="text"] {
+  display: block;
+  width: 100%;
+  margin-top: 5px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid #3a3e58;
+  background: #191b2b;
+  color: #fff;
+  font: inherit;
+}
+dialog input[type="range"], dialog input[type="file"] { display: block; width: 100%; margin-top: 6px; }
+
+.row { display: flex; flex-wrap: wrap; gap: 8px; }
+menu { display: flex; justify-content: flex-end; gap: 8px; margin: 20px 0 0; padding: 0; }
+
+.btn {
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid #3a3e58;
+  background: #2f3250;
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.btn:hover { filter: brightness(1.15); }
+.btn.primary { background: var(--accent); border-color: var(--accent); }
