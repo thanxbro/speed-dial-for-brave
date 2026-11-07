@@ -6,6 +6,10 @@
   <link rel="stylesheet" href="newtab.css">
 </head>
 <body>
+  <!-- два слоя фона: новый проявляется поверх старого -->
+  <div class="bg-layer" id="bgA"></div>
+  <div class="bg-layer" id="bgB"></div>
+
   <button id="settingsBtn" class="settings-btn" data-i18n-title="settings">⚙</button>
 
   <main>
@@ -51,15 +55,48 @@
       <label class="check">
         <input id="showTitles" type="checkbox"> <span data-i18n="showTitles"></span>
       </label>
-      <label><span data-i18n="background"></span>
-        <input id="bgFile" type="file" accept="image/*">
-      </label>
-      <div class="row">
-        <button type="button" class="btn" id="bgReset" data-i18n="removeBackground"></button>
-        <button type="button" class="btn" id="exportBtn" data-i18n="export"></button>
-        <button type="button" class="btn" id="importBtn" data-i18n="import"></button>
-        <input id="importFile" type="file" accept="application/json" hidden>
-      </div>
+      <fieldset class="section">
+        <legend data-i18n="backgrounds"></legend>
+        <div id="bgList" class="bg-list"></div>
+        <p id="bgEmpty" class="hint" data-i18n="bgEmpty"></p>
+        <div class="row">
+          <button type="button" class="btn" id="bgAdd" data-i18n="addBackgrounds"></button>
+          <button type="button" class="btn" id="bgClear" data-i18n="removeAllBackgrounds"></button>
+          <input id="bgFile" type="file" accept="image/*" multiple hidden>
+        </div>
+        <p id="bgBusy" class="hint" hidden data-i18n="bgProcessing"></p>
+
+        <div id="bgRotation">
+          <label class="inline"><span data-i18n="bgChange"></span>
+            <select id="bgMode">
+              <option value="tab" data-i18n="bgModeTab"></option>
+              <option value="interval" data-i18n="bgModeInterval"></option>
+            </select>
+          </label>
+          <label class="inline" id="bgIntervalRow"><span data-i18n="bgEvery"></span>
+            <input id="bgInterval" type="number" min="1" max="10080" step="1">
+            <span data-i18n="minutesShort"></span>
+            <span id="bgIntervalHint" class="hint"></span>
+          </label>
+          <label class="inline"><span data-i18n="bgOrder"></span>
+            <select id="bgOrder">
+              <option value="sequential" data-i18n="bgOrderSequential"></option>
+              <option value="random" data-i18n="bgOrderRandom"></option>
+            </select>
+          </label>
+        </div>
+        <p id="bgOneNote" class="hint" data-i18n="bgNeedTwo"></p>
+      </fieldset>
+
+      <fieldset class="section">
+        <legend data-i18n="backup"></legend>
+        <div class="row">
+          <button type="button" class="btn" id="exportBtn" data-i18n="export"></button>
+          <button type="button" class="btn" id="importBtn" data-i18n="import"></button>
+          <input id="importFile" type="file" accept="application/json" hidden>
+        </div>
+        <label class="check"><input id="exportBgs" type="checkbox"> <span data-i18n="exportBackgrounds"></span></label>
+      </fieldset>
       <menu>
         <button class="btn primary" value="close" data-i18n="done"></button>
       </menu>

@@ -6,6 +6,9 @@
 }
 
 * { box-sizing: border-box; }
+/* атрибут hidden должен скрывать элемент, даже если у него задан display */
+[hidden] { display: none !important; }
+
 
 html, body { margin: 0; min-height: 100%; }
 
@@ -14,11 +17,23 @@ body {
   color: #fff;
   background-color: #151726;
   background-image: linear-gradient(135deg, #2a2f5a 0%, #151726 60%, #0f1019 100%);
-  background-size: cover;
-  background-position: center;
   background-attachment: fixed;
   min-height: 100vh;
 }
+
+/* фоновые картинки: два слоя, новый плавно проявляется поверх старого */
+.bg-layer {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-size: cover;
+  background-position: center;
+  opacity: 0;
+  transition: opacity 1.2s ease;
+  pointer-events: none;
+}
+.bg-layer.instant { transition: none; }
+.bg-layer.shown { opacity: 1; }
 
 /* лёгкое затемнение поверх обоев, чтобы плитки читались */
 body::before {
@@ -191,6 +206,64 @@ dialog input[type="text"] {
   font: inherit;
 }
 dialog input[type="range"], dialog input[type="file"] { display: block; width: 100%; margin-top: 6px; }
+dialog { max-height: 90vh; overflow-y: auto; }
+
+/* разделы настроек */
+.section {
+  margin: 0 0 16px;
+  padding: 12px 14px 4px;
+  border: 1px solid #3a3e58;
+  border-radius: 10px;
+}
+.section legend { padding: 0 6px; font-size: 13px; color: #fff; }
+.section .row { margin-bottom: 12px; }
+
+dialog label.inline { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+dialog select, dialog input[type="number"] {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid #3a3e58;
+  background: #191b2b;
+  color: #fff;
+  font: inherit;
+}
+dialog input[type="number"] { width: 90px; }
+.hint { margin: 0 0 12px; font-size: 12px; color: #8e93ad; }
+label .hint { margin: 0; }
+
+/* список фонов в настройках */
+.bg-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.bg-list:empty { display: none; }
+.bg-item {
+  position: relative;
+  cursor: pointer;
+  aspect-ratio: 16 / 10;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  background: #191b2b center / cover no-repeat;
+}
+.bg-item.current { border-color: var(--accent); }
+.bg-item button {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, .65);
+  color: #fff;
+  font-size: 11px;
+  cursor: pointer;
+}
+.bg-item button:hover { background: rgba(0, 0, 0, .9); }
 
 .row { display: flex; flex-wrap: wrap; gap: 8px; }
 menu { display: flex; justify-content: flex-end; gap: 8px; margin: 20px 0 0; padding: 0; }
